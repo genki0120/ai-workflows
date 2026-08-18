@@ -85,16 +85,16 @@ jobs:
               ;;
           esac
 
-      - name: Setup pnpm with Corepack
+      - name: Setup pnpm
         if: ${{ inputs.package-manager == 'pnpm' }}
         shell: bash
         run: |
-          corepack enable
           PM_SPEC=$(node -e "try { process.stdout.write(require('./package.json').packageManager || '') } catch (_) {}")
           if [[ "$PM_SPEC" == pnpm@* ]]; then
-            corepack prepare "$PM_SPEC" --activate
+            PNPM_VERSION="${PM_SPEC#pnpm@}"
+            npm install --global "pnpm@${PNPM_VERSION}"
           else
-            corepack prepare pnpm@latest --activate
+            npm install --global pnpm@latest
           fi
           pnpm --version
 
