@@ -13,6 +13,31 @@ on:
         required: false
         type: string
         default: "24"
+      lint-command:
+        description: Optional lint command override
+        required: false
+        type: string
+        default: ""
+      typecheck-command:
+        description: Optional typecheck command override
+        required: false
+        type: string
+        default: ""
+      test-command:
+        description: Optional test command override
+        required: false
+        type: string
+        default: ""
+      expo-enabled:
+        description: Run Expo Doctor, Expo Export, and EAS Update
+        required: false
+        type: boolean
+        default: true
+      expo-directory:
+        description: Directory where Expo commands should run
+        required: false
+        type: string
+        default: "."
       eas-channel:
         description: EAS Update channel
         required: false
@@ -26,7 +51,7 @@ on:
     secrets:
       EXPO_TOKEN:
         description: Expo access token supplied by the caller repository
-        required: true
+        required: false
 
 permissions:
   contents: read
@@ -75,7 +100,9 @@ jobs:
       - name: Lint
         shell: bash
         run: |
-          if [ "${{ inputs.package-manager }}" = "pnpm" ]; then
+          if [ -n "${{ inputs.lint-command }}" ]; then
+            eval "${{ inputs.lint-command }}"
+          elif [ "${{ inputs.package-manager }}" = "pnpm" ]; then
             pnpm run lint
           else
             npm run lint
@@ -84,7 +111,9 @@ jobs:
       - name: TypeScript check
         shell: bash
         run: |
-          if [ "${{ inputs.package-manager }}" = "pnpm" ]; then
+          if [ -n "${{ inputs.typecheck-command }}" ]; then
+            eval "${{ inputs.typecheck-command }}"
+          elif [ "${{ inputs.package-manager }}" = "pnpm" ]; then
             pnpm exec tsc --noEmit
           else
             npx tsc --noEmit
@@ -93,13 +122,17 @@ jobs:
       - name: Tests
         shell: bash
         run: |
-          if [ "${{ inputs.package-manager }}" = "pnpm" ]; then
+          if [ -n "${{ inputs.test-command }}" ]; then
+            eval "${{ inputs.test-command }}"
+          elif [ "${{ inputs.package-manager }}" = "pnpm" ]; then
             pnpm run test:ci
           else
             npm run test:ci
           fi
 
       - name: Expo Doctor
+        if: ${{ inputs.expo-enabled }}
+        working-directory: ${{ inputs.expo-directory }}
         shell: bash
         run: |
           if [ "${{ inputs.package-manager }}" = "pnpm" ]; then
@@ -109,6 +142,8 @@ jobs:
           fi
 
       - name: Expo Export
+        if: ${{ inputs.expo-enabled }}
+        working-directory: ${{ inputs.expo-directory }}
         shell: bash
         run: |
           if [ "${{ inputs.package-manager }}" = "pnpm" ]; then
@@ -119,6 +154,7 @@ jobs:
 
   eas-update:
     name: EAS Update
+    if: ${{ inputs.expo-enabled }}
     needs: validate
     runs-on: ubuntu-latest
 
@@ -147,6 +183,16 @@ jobs:
             npm ci
           fi
 
+      - name: Verify Expo token
+        shell: bash
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN is required when expo-enabled=true"
+            exit 1
+          fi
+
       - name: Setup Expo and EAS
         uses: expo/expo-github-action@v8
         with:
@@ -154,6 +200,7 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Publish EAS Update
+        working-directory: ${{ inputs.expo-directory }}
         run: >
           eas update
           --channel "${{ inputs.eas-channel }}"
