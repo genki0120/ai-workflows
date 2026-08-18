@@ -57,17 +57,10 @@ jobs:
       - name: Checkout caller repository
         uses: actions/checkout@v5
 
-      - name: Setup pnpm
-        if: ${{ inputs.package-manager == 'pnpm' }}
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node-version }}
-          cache: ${{ inputs.package-manager }}
 
       - name: Probe reusable workflow
         run: echo "package-manager=${{ inputs.package-manager }} expo-enabled=${{ inputs.expo-enabled }}"
