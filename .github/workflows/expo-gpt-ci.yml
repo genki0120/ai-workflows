@@ -13,6 +13,36 @@ on:
         required: false
         type: string
         default: "24"
+      install-command:
+        description: Optional install command override
+        required: false
+        type: string
+        default: ""
+      lint-command:
+        description: Optional lint command override
+        required: false
+        type: string
+        default: ""
+      typecheck-command:
+        description: Optional typecheck command override
+        required: false
+        type: string
+        default: ""
+      test-command:
+        description: Optional test command override
+        required: false
+        type: string
+        default: ""
+      expo-enabled:
+        description: Run Expo Doctor, Expo Export, and EAS Update
+        required: false
+        type: boolean
+        default: true
+      expo-directory:
+        description: Directory where Expo commands should run
+        required: false
+        type: string
+        default: "."
       eas-channel:
         description: EAS Update channel
         required: false
@@ -25,15 +55,14 @@ on:
         default: "production"
     secrets:
       EXPO_TOKEN:
-        description: Expo access token supplied by the caller repository
-        required: true
+        required: false
 
 permissions:
   contents: read
 
 jobs:
-  validate:
-    name: Validate GPT changes
+  validate-and-update:
+    name: Validate GPT changes and publish update
     runs-on: ubuntu-latest
 
     steps:
@@ -66,7 +95,9 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: |
-          if [ "${{ inputs.package-manager }}" = "pnpm" ]; then
+          if [ -n "${{ inputs.install-command }}" ]; then
+            eval "${{ inputs.install-command }}"
+          elif [ "${{ inputs.package-manager }}" = "pnpm" ]; then
             pnpm install --frozen-lockfile
           else
             npm ci
@@ -75,7 +106,9 @@ jobs:
       - name: Lint
         shell: bash
         run: |
-          if [ "${{ inputs.package-manager }}" = "pnpm" ]; then
+          if [ -n "${{ inputs.lint-command }}" ]; then
+            eval "${{ inputs.lint-command }}"
+          elif [ "${{ inputs.package-manager }}" = "pnpm" ]; then
             pnpm run lint
           else
             npm run lint
@@ -84,7 +117,9 @@ jobs:
       - name: TypeScript check
         shell: bash
         run: |
-          if [ "${{ inputs.package-manager }}" = "pnpm" ]; then
+          if [ -n "${{ inputs.typecheck-command }}" ]; then
+            eval "${{ inputs.typecheck-command }}"
+          elif [ "${{ inputs.package-manager }}" = "pnpm" ]; then
             pnpm exec tsc --noEmit
           else
             npx tsc --noEmit
@@ -93,13 +128,17 @@ jobs:
       - name: Tests
         shell: bash
         run: |
-          if [ "${{ inputs.package-manager }}" = "pnpm" ]; then
+          if [ -n "${{ inputs.test-command }}" ]; then
+            eval "${{ inputs.test-command }}"
+          elif [ "${{ inputs.package-manager }}" = "pnpm" ]; then
             pnpm run test:ci
           else
             npm run test:ci
           fi
 
       - name: Expo Doctor
+        if: ${{ inputs.expo-enabled }}
+        working-directory: ${{ inputs.expo-directory }}
         shell: bash
         run: |
           if [ "${{ inputs.package-manager }}" = "pnpm" ]; then
@@ -109,6 +148,8 @@ jobs:
           fi
 
       - name: Expo Export
+        if: ${{ inputs.expo-enabled }}
+        working-directory: ${{ inputs.expo-directory }}
         shell: bash
         run: |
           if [ "${{ inputs.package-manager }}" = "pnpm" ]; then
@@ -117,43 +158,27 @@ jobs:
             npx expo export
           fi
 
-  eas-update:
-    name: EAS Update
-    needs: validate
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout caller repository
-        uses: actions/checkout@v5
-
-      - name: Setup pnpm
-        if: ${{ inputs.package-manager == 'pnpm' }}
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ inputs.node-version }}
-          cache: ${{ inputs.package-manager }}
-
-      - name: Install dependencies
+      - name: Verify Expo token
+        if: ${{ inputs.expo-enabled }}
         shell: bash
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          if [ "${{ inputs.package-manager }}" = "pnpm" ]; then
-            pnpm install --frozen-lockfile
-          else
-            npm ci
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN is required when expo-enabled=true"
+            exit 1
           fi
 
       - name: Setup Expo and EAS
+        if: ${{ inputs.expo-enabled }}
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Publish EAS Update
+        if: ${{ inputs.expo-enabled }}
+        working-directory: ${{ inputs.expo-directory }}
         run: >
           eas update
           --channel "${{ inputs.eas-channel }}"
